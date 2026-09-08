@@ -1,6 +1,6 @@
 using CompoundingPerf.Features;
-using SPTarkov.Server.Core.Models.Common;
 using Xunit;
+using SPTarkov.Server.Core.Models.Common;
 
 namespace CompoundingPerf.Tests;
 

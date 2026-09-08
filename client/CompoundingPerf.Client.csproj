@@ -1,20 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- BepInEx 5.4 + Unity Mono runtime require net471 (server side targets net9.0). -->
-    <TargetFramework>net471</TargetFramework>
+    <!-- netstandard2.1, which is what SPT 4.1 client plugins target (server side is
+         net10.0). Was net471. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <Version>1.3.0</Version>
+    <Version>2.0.0</Version>
     <Authors>EchoStarz</Authors>
     <Product>CompoundingPerf.Client</Product>
-    <Description>Client-side Harmony patches for CompoundingPerf — in-raid hot-path log suppressor and raid-state tracking.</Description>
+    <Description>Benchmark-build-only frame-stats recorder for CompoundingPerf. Release builds contain no patches.</Description>
     <RootNamespace>CompoundingPerf.Client</RootNamespace>
     <AssemblyName>CompoundingPerf.Client</AssemblyName>
 
-    <SptRoot Condition="'$(SptRoot)' == ''">C:\SPT</SptRoot>
+    <SptRoot Condition="'$(SptRoot)' == ''">E:\SPT 4.1</SptRoot>
 
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

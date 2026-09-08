@@ -7,7 +7,7 @@ namespace CompoundingPerf.Client.Telemetry;
 
 /// <summary>
 /// Client-side mirror of the server <c>TelemetryHub</c>. Same shape — diverged because
-/// the server runs on net9.0 with System.Text.Json and the client runs on net471 with
+/// the server runs on net10.0 with System.Text.Json and the client runs on netstandard2.1 with
 /// Newtonsoft.Json. Counters always cheap; timings opt-in.
 /// </summary>
 public static class ClientTelemetry

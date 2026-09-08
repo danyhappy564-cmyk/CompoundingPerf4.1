@@ -1,5 +1,5 @@
-// Compile-included by both the server project (net9.0) and the client project (net471).
-// Avoid `required` keyword for net471 compatibility — use defaults instead.
+// Compile-included by both the server project (net10.0) and the client project
+// (netstandard2.1). Avoid `required` so both target frameworks accept it — use defaults.
 
 namespace CompoundingPerf;
 
@@ -18,16 +18,27 @@ public record CompoundingPerfConfig
 
 public record ServerToggles
 {
-    public ProfileSaveDebouncerOptions ProfileSaveDebouncer { get; set; } = new();
-    public ResponseCacheOptions        ResponseCache        { get; set; } = new();
-    public ThreadSafeRandomOptions     ThreadSafeRandom     { get; set; } = new();
-    public ResponseSanitizerOptions    ResponseSanitizer    { get; set; } = new();
-    public RagfairCalmUpdatesOptions   RagfairCalmUpdates   { get; set; } = new();
-    public FastCompressionOptions      FastCompression      { get; set; } = new();
-    public ThreadSafeCachesOptions          ThreadSafeCaches        { get; set; } = new();
-    public SaveDirtyTrackingOptions         SaveDirtyTracking       { get; set; } = new();
+    public RagfairCalmUpdatesOptions        RagfairCalmUpdates       { get; set; } = new();
+    public FastCompressionOptions           FastCompression          { get; set; } = new();
+    public SaveDirtyTrackingOptions         SaveDirtyTracking        { get; set; } = new();
     public IsolatedBotRandomisationOptions  IsolatedBotRandomisation { get; set; } = new();
     public CalmNotifierOptions              CalmNotifier             { get; set; } = new();
+
+    // Retired in 2.0 because SPT 4.1 does the job itself, verified against the 4.1.5
+    // server assembly rather than assumed:
+    //   ProfileSaveDebouncer (S1) - SaveProfileAsync now takes a per-profile SemaphoreSlim,
+    //                               so saves for one profile no longer overlap.
+    //   ResponseCache (S2)        - the heavy endpoints (items, globals, handbook,
+    //                               customization, hideout areas/recipes) now return
+    //                               StreamedJsonBody and serialize straight to the response
+    //                               stream, so there is no longer a big string to cache.
+    //   ThreadSafeRandom (S6)     - RandomUtil no longer holds a shared System.Random; it
+    //                               uses RandomNumberGenerator, which is thread-safe.
+    //   ResponseSanitizer (S7)    - ClearString is already a single SearchValues scan over
+    //                               a pooled buffer.
+    //   ThreadSafeCaches (S10)    - ItemBaseClassService now guards its cache with a Lock,
+    //                               HandbookHelper's lazy init is benign, and nothing inside
+    //                               SPT calls ItemFilterService's blacklist mutators at all.
     // S14 (FastRouteDispatch) was REMOVED before release: memoizing url→router
     // resolution changed the /launcher/server/connect response under FIKA (raw
     // 0.0.0.0 backendUrl → game cannot connect). Root cause not fully explained,
@@ -36,11 +47,10 @@ public record ServerToggles
 
 public record CalmNotifierOptions
 {
-    // S13: (a) websocket sends no longer hold the global socket lock during network
-    // I/O, payloads serialize once per message instead of once per socket, and the
-    // socket snapshot is taken safely under the lock (vanilla returns a lazy iterator
-    // that races); (b) the /notify long-poll releases its thread between checks
-    // instead of pinning one thread-pool thread per connected client.
+    // S13: the /notify long-poll releases its thread between checks instead of pinning
+    // one thread-pool thread per connected client for its full 15s budget. The websocket
+    // half of S13 retired in 2.0 - 4.1 serializes once per message and gates each socket
+    // individually on its own.
     public bool Enabled { get; set; } = true;
 }
 
@@ -53,14 +63,6 @@ public record IsolatedBotRandomisationOptions
     public bool Enabled { get; set; } = true;
 }
 
-public record ThreadSafeCachesOptions
-{
-    // S10: serializes access to three SPT caches whose plain collections are written
-    // at runtime while other threads read them (HandbookHelper price cache,
-    // ItemBaseClassService base-class cache, ItemFilterService blacklists). Same
-    // hazard family S6 fixed in RandomUtil; no behavior change.
-    public bool Enabled { get; set; } = true;
-}
 
 public record SaveDirtyTrackingOptions
 {
@@ -77,21 +79,13 @@ public record SaveDirtyTrackingOptions
     public int ForceSaveIntervalSeconds { get; set; } = 300;
 }
 
-public record ResponseSanitizerOptions
-{
-    // S7: replaces vanilla's five-regex-passes-per-response ClearString with a single
-    // scan that returns the original string allocation-free when (as is almost always
-    // the case for serialized JSON) there are no raw control characters to strip.
-    // Output is identical to vanilla for every input.
-    public bool Enabled { get; set; } = true;
-}
 
 public record RagfairCalmUpdatesOptions
 {
     // S8: vanilla's flea-offer expiry pass ends with a forced, blocking, compacting
-    // full GC — a recurring multi-hundred-ms stall on large heaps. This feature
-    // reproduces the expiry sequence exactly and omits only the forced collect;
-    // the runtime's server GC reclaims the memory on its own schedule.
+    // full GC — a recurring multi-hundred-ms stall on large heaps. The forced collect
+    // is the only thing removed; the runtime's server GC reclaims the memory on its
+    // own schedule.
     public bool Enabled { get; set; } = true;
 }
 
@@ -130,37 +124,8 @@ public record FrameStatsOptions
     public double WarmupSkipSeconds { get; set; } = 20;
 }
 
-public record ProfileSaveDebouncerOptions
-{
-    // V1.0: enabled by default — implemented via SPT.DI TypeOverride of SaveServer
-    // (see CoalescingSaveServer). Trailing-edge semantics preserve durability:
-    // at most one save in flight + one trailing per profile, the trailing save
-    // captures the latest in-memory state, no mutations are dropped.
-    public bool Enabled { get; set; } = true;
-}
 
-public record ResponseCacheOptions
-{
-    // V1.1: enabled by default — caches a conservative whitelist of static-after-load
-    // endpoints (item DB, handbook, hideout recipes, globals, etc.). First request per
-    // path runs through the normal router chain (so other mods' modifications are
-    // captured); subsequent requests return the cached JSON directly.
-    public bool Enabled { get; set; } = true;
 
-    /// <summary>Extra paths to cache beyond the built-in conservative whitelist.
-    /// Use only for paths whose responses don't change at runtime.</summary>
-    public List<string> AdditionalPaths { get; set; } = new();
-}
-
-public record ThreadSafeRandomOptions
-{
-    // S6: replace the unsafe instance Random in SPT's RandomUtil with a lock-protected
-    // path (for the four virtual methods that touch it: GetDouble, GetBool, RandInt,
-    // RandNum) and a Harmony-patched Random.Shared path (for the non-virtual
-    // GetSecureRandomNumber). Pure correctness fix — no behavior change, just lets
-    // concurrent callers stop corrupting RNG state.
-    public bool Enabled { get; set; } = true;
-}
 
 public record TelemetryOptions
 {

@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>CompoundingPerf</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <OutputType>Library</OutputType>
-    <Version>1.3.0</Version>
+    <Version>2.0.0</Version>
     <OutputPath>bin\$(Configuration)\$(ProjectName)\$(AssemblyName)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 
@@ -22,13 +22,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SPTarkov.Common" Version="4.0.13" />
-    <PackageReference Include="SPTarkov.DI" Version="4.0.13" />
-    <PackageReference Include="SPTarkov.Server.Core" Version="4.0.13" />
+    <!-- SPT 4.1 renamed the server packages SPTarkov.* -> SPTushonka.*; the namespaces
+         inside them are unchanged. -->
+    <PackageReference Include="SPTushonka.Common" Version="4.1.5" />
+    <PackageReference Include="SPTushonka.DI" Version="4.1.5" />
+    <PackageReference Include="SPTushonka.Server.Core" Version="4.1.5" />
     <!-- 0Harmony ships with the SPT server runtime; Lib.Harmony is the standard NuGet
          that exposes the `HarmonyLib` API we compile against. Marked PrivateAssets
-         so we don't try to copy it next to our DLL — the runtime already has it. -->
-    <PackageReference Include="Lib.Harmony" Version="2.3.3">
+         so we don't try to copy it next to our DLL — the runtime already has it.
+
+         2.3.3 -> 2.4.2 for 4.1: the SPT server moved to net10.0, where
+         System.Reflection.Emit.LocalBuilder became abstract, and 2.3.3 throws
+         MemberAccessException the moment it tries to declare a local while building a
+         patch. Verified by running 2.3.3 against the 4.1.5 assemblies here. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2">
       <PrivateAssets>all</PrivateAssets>
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
@@ -42,7 +49,7 @@
 
   <!-- Auto-deploy: copy the server DLL + config.json to the live SPT mods folder. -->
   <PropertyGroup>
-    <SptRoot Condition="'$(SptRoot)' == ''">C:\SPT</SptRoot>
+    <SptRoot Condition="'$(SptRoot)' == ''">E:\SPT 4.1</SptRoot>
   </PropertyGroup>
 
   <!-- Auto-deploy: copy the server DLL + config.json to the live SPT mods folder.

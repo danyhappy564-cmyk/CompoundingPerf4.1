@@ -10,13 +10,15 @@ public class ConfigTests
     {
         var c = new CompoundingPerfConfig();
 
-        Assert.True(c.Server.ProfileSaveDebouncer.Enabled);
-        Assert.True(c.Server.ResponseCache.Enabled);
-        Assert.True(c.Server.ThreadSafeRandom.Enabled);
-        Assert.True(c.Server.ResponseSanitizer.Enabled);
         Assert.True(c.Server.RagfairCalmUpdates.Enabled);
         Assert.True(c.Server.FastCompression.Enabled);
         Assert.Equal("Fastest", c.Server.FastCompression.Level);
+        Assert.True(c.Server.SaveDirtyTracking.Enabled);
+        Assert.True(c.Server.IsolatedBotRandomisation.Enabled);
+        Assert.True(c.Server.CalmNotifier.Enabled);
+
+        // Must stay above SPT's 60s save tick or the dirty-skip never actually fires.
+        Assert.True(c.Server.SaveDirtyTracking.ForceSaveIntervalSeconds > 60);
 
         // Telemetry off by default — opt-in is intentional.
         Assert.False(c.Telemetry.Enabled);
@@ -30,8 +32,8 @@ public class ConfigTests
         {
             Server = new ServerToggles
             {
-                ProfileSaveDebouncer = new ProfileSaveDebouncerOptions { Enabled = false },
-                ResponseCache = new ResponseCacheOptions { Enabled = false, AdditionalPaths = new List<string> { "/custom/path" } },
+                FastCompression = new FastCompressionOptions { Enabled = false, Level = "Optimal" },
+                SaveDirtyTracking = new SaveDirtyTrackingOptions { Enabled = false, ForceSaveIntervalSeconds = 900 },
             },
             Client = new ClientToggles
             {
@@ -42,11 +44,38 @@ public class ConfigTests
         var json = JsonSerializer.Serialize(original);
         var roundTripped = JsonSerializer.Deserialize<CompoundingPerfConfig>(json)!;
 
-        Assert.False(roundTripped.Server.ProfileSaveDebouncer.Enabled);
-        Assert.False(roundTripped.Server.ResponseCache.Enabled);
-        Assert.Contains("/custom/path", roundTripped.Server.ResponseCache.AdditionalPaths);
+        Assert.False(roundTripped.Server.FastCompression.Enabled);
+        Assert.Equal("Optimal", roundTripped.Server.FastCompression.Level);
+        Assert.False(roundTripped.Server.SaveDirtyTracking.Enabled);
+        Assert.Equal(900, roundTripped.Server.SaveDirtyTracking.ForceSaveIntervalSeconds);
         Assert.False(roundTripped.Client.FrameStats.Enabled);
         Assert.Equal(35, roundTripped.Client.FrameStats.WarmupSkipSeconds);
+    }
+
+    [Fact]
+    public void Retired_feature_keys_are_ignored_rather_than_fatal()
+    {
+        // Someone upgrading from 1.x keeps their old config.json. SPT's loader is strict
+        // about syntax but not about unknown members, and neither is this — the five
+        // retired feature blocks must simply be skipped, not throw at boot.
+        const string legacy = """
+            {
+              "MasterEnabled": true,
+              "Server": {
+                "ProfileSaveDebouncer": { "Enabled": true },
+                "ResponseCache": { "Enabled": true, "AdditionalPaths": ["/custom/path"] },
+                "ThreadSafeRandom": { "Enabled": true },
+                "ResponseSanitizer": { "Enabled": true },
+                "ThreadSafeCaches": { "Enabled": true },
+                "FastCompression": { "Enabled": true, "Level": "Fastest" }
+              }
+            }
+            """;
+
+        var parsed = JsonSerializer.Deserialize<CompoundingPerfConfig>(legacy);
+
+        Assert.NotNull(parsed);
+        Assert.True(parsed!.Server.FastCompression.Enabled);
     }
 
     [Fact]
@@ -64,9 +93,9 @@ public class ConfigTests
         // rejected, killing every feature at boot (2026-06-13).
         var parsed = JsonSerializer.Deserialize<CompoundingPerfConfig>(raw);
         Assert.NotNull(parsed);
-        Assert.True(parsed!.Server.ProfileSaveDebouncer.Enabled);
-        Assert.True(parsed.Server.ResponseCache.Enabled);
-        Assert.True(parsed.Server.ThreadSafeRandom.Enabled);
+        Assert.True(parsed!.Server.RagfairCalmUpdates.Enabled);
+        Assert.True(parsed.Server.SaveDirtyTracking.Enabled);
+        Assert.True(parsed.Server.CalmNotifier.Enabled);
         Assert.True(parsed.Client.FrameStats.Enabled);
     }
 }

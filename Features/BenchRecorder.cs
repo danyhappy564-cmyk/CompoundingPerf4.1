@@ -2,7 +2,8 @@
 using System.Runtime;
 using System.Text.Json;
 using CompoundingPerf.Telemetry;
-using SPTarkov.Server.Core.Models.Utils;
+using SPTarkov.Common.Models.Logging;
+using SPTarkov.Server.Core.Models.Eft.Match;
 
 namespace CompoundingPerf.Features;
 

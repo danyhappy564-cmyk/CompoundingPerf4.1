@@ -12,10 +12,10 @@ namespace CompoundingPerf.Features;
 /// serialization + hashing every few seconds, forever, for nothing.</para>
 ///
 /// <para><b>The fix</b>: skip the save call entirely when we know nothing changed.
-/// "Know" is implemented conservatively: <see cref="CachingHttpRouter"/> marks a session
-/// dirty for ANY request whose path is not in a small known-pure whitelist (keepalives,
-/// pings, notifier long-polls, the static data endpoints S2 caches). Unknown paths are
-/// assumed mutating. A clean session still gets a real save every
+/// "Know" is implemented conservatively: <see cref="SaveDirtyTracking"/> hangs a prefix on
+/// the HTTP router and marks a session dirty for ANY request whose path is not in a small
+/// known-pure whitelist (keepalives, pings, notifier long-polls, the static data
+/// endpoints). Unknown paths are assumed mutating. A clean session still gets a real save every
 /// <c>ForceSaveIntervalSeconds</c> (default 60) to persist server-internal changes that
 /// don't arrive via HTTP (hideout production progress, insurance returns) — so the
 /// worst-case persistence window for purely passive changes is the force interval,
@@ -55,6 +55,25 @@ public static class ProfileDirtyTracker
         "/files/",
     ];
 
+    private static readonly HashSet<string> StaticDataPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/client/items",
+        "/client/items/templates",
+        "/client/handbook/templates",
+        "/client/globals",
+        "/client/customization",
+        "/client/languages",
+        "/client/locale/en",
+        "/client/menu/locale/en",
+        "/client/settings",
+        "/client/hideout/areas",
+        "/client/hideout/production/recipes",
+        "/client/hideout/qte/list",
+        "/client/locations",
+        "/client/trading/api/traderSettings",
+        "/client/prestige/list",
+    };
+
     public static void MarkRequest(MongoId sessionId, string? path)
     {
         if (!IsEnabled || sessionId.IsEmpty || path is null)
@@ -70,8 +89,11 @@ public static class ProfileDirtyTracker
             }
         }
 
-        // S2's static data endpoints are global reads — also pure.
-        if (CachingHttpRouter.DefaultCacheablePaths.Contains(path))
+        // Static-after-load data endpoints are global reads — also pure. This list used
+        // to live on the S2 response cache; S2 retired in 2.0 (4.1 streams these rather
+        // than building a cacheable string), but they are still pure reads and still
+        // must not dirty a session.
+        if (StaticDataPaths.Contains(path))
         {
             return;
         }

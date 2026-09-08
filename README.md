@@ -2,7 +2,7 @@
 
 A performance mod for [SPT](https://www.sp-tarkov.com/) **4.1** that stacks several small, independent server-side optimizations under one config. Each feature is individually toggleable, designed to coexist with other mods, and held to one rule: **a feature ships only if its cost is bounded by construction** — nothing that could blow up on a heavily-modded install.
 
-The mod is **server-only**: it ships no BepInEx plugin and never touches your game client.
+The mod is **server-only**: it ships no BepInEx plugin and never touches your game client. The `client/` project in this repo is a benchmark harness, not a feature — everything in it is behind `#if BENCH`, so a normal Release build of it produces a plugin with no patches at all. Nothing in this mod runs in your game process.
 
 ## What it does
 
@@ -83,8 +83,16 @@ Server targets `net10.0` against the `SPTushonka.Server.Core` 4.1.5 NuGet packag
 `Lib.Harmony` is pinned to **2.4.2**, not 2.3.3. The 4.1 server runs on .NET 10, where `System.Reflection.Emit.LocalBuilder` became abstract, and 2.3.3 throws `MemberAccessException` the moment it declares a local while building a patch.
 
 ```
+dotnet build CompoundingPerf.sln -c Release
+dotnet test CompoundingPerf.sln -c Release
+```
+
+`CompoundingPerf.sln` covers all three projects (server, tests, and the bench-only client). The server dll and `config.json` deploy to `$(SptRoot)\SPT\user\mods\CompoundingPerf\` on build; **the client project only deploys when built with `-p:Bench=true`**, because without it that project compiles to a plugin that installs no patches and measures nothing.
+
+To build just the shipping mod:
+
+```
 dotnet build CompoundingPerf.csproj -c Release
-dotnet test tests/CompoundingPerf.Tests.csproj -c Release
 ```
 
 The unit-test suite covers the dirty-tracking save-skip rules, the telemetry hub, the bench-sample and frame-stats maths, and the config schema — including that a 1.x `config.json` with the five retired feature blocks still loads rather than throwing at boot.

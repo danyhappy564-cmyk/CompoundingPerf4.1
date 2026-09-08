@@ -79,9 +79,17 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- Skip via -p:SkipDeploy=true when EFT.exe or SPT.Server is running and holding
-       the DLL memory-mapped — compile still succeeds, just no live deploy. -->
-  <Target Name="DeployToSpt" AfterTargets="PostBuildEvent" Condition="'$(SkipDeploy)' != 'true'">
+  <!--
+    Bench builds only. Without -p:Bench=true this project compiles to a plugin that
+    installs no patches and measures nothing (everything real in here is #if BENCH), so
+    deploying it would drop a do-nothing dll into BepInEx\plugins. That did not matter
+    while this project had to be built by hand; it does now that CompoundingPerf.sln
+    builds all three projects together.
+
+    Skip via -p:SkipDeploy=true when EFT.exe is running and holding the dll
+    memory-mapped — compile still succeeds, just no live deploy.
+  -->
+  <Target Name="DeployToSpt" AfterTargets="PostBuildEvent" Condition="'$(SkipDeploy)' != 'true' AND '$(Bench)' == 'true'">
     <PropertyGroup>
       <PluginDeployDir>$(SptRoot)\BepInEx\plugins\CompoundingPerf.Client\</PluginDeployDir>
     </PropertyGroup>

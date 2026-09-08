@@ -10,9 +10,20 @@ The mod is **server-only**: it ships no BepInEx plugin and never touches your ga
 |---|---|---|
 | **RagfairCalmUpdates** (S8) | on | Vanilla forces a blocking, compacting full GC every time enough flea offers expire — a recurring stall. Only that forced collect is removed; the expiry sequence itself is untouched. |
 | **FastCompression** (S9) | on | Vanilla zlib-compresses every response at `SmallestSize` (slowest). `Fastest` is several times cheaper in CPU for a few percent larger payloads that only cross localhost/LAN. Covers both the buffered and the streamed response paths. |
-| **SaveDirtyTracking** (S11) | on | Skips the periodic profile save entirely when the session is provably clean — vanilla serializes and MD5-hashes the full profile every tick even when idle. Any non-pure request marks the session dirty, so player-driven changes can never be skipped. |
+| **RaidStartGc** (S15) | on | **New in 2.0.** `StartLocalRaidAsync` ends with `GC.Collect(MaxGeneration, Aggressive, blocking, compacting)` — the most expensive collection .NET offers — *inside the request path*, so you sit on the loading screen while the server compacts its whole heap, every raid. Default `Background` still asks for a gen-2 collection, just a non-blocking, non-compacting one the runtime finishes while the raid loads. |
+| **SaveDirtyTracking** (S11) | **off** | Skips the periodic profile save entirely when the session is provably clean — vanilla serializes and MD5-hashes the full profile every tick even when idle. Any non-pure request marks the session dirty, so player-driven changes can never be skipped. Off by default: see below. |
 | **IsolatedBotRandomisation** (S12) | on | Fixes a vanilla bug: night-raid equipment modifiers are written into shared bot config — they compound per generated bot, persist across raids until restart, and race across parallel bot generation. Every bot now gets a private copy. |
 | **CalmNotifier** (S13) | on | The `/notify` long-poll releases its thread between checks instead of pinning one thread-pool thread per connected client for its full 15-second budget. Most valuable for FIKA hosts. |
+
+### Why S11 ships off
+
+It is the only feature here that **suppresses a vanilla call** rather than changing a value it passes. Every other one either swaps a constant, redirects a single call to an equivalent, or adds a clone — if any of them misbehaves the worst case is "the optimization did nothing". S11's worst case is "a profile change was not written".
+
+Its payoff is also the smallest of the set: it only helps a session sitting idle in the menu, because anything happening in a raid marks the session dirty anyway. Worst risk, least reward — so it is opt-in. Set `SaveDirtyTracking.Enabled: true` if you want it.
+
+### Considered and not shipped
+
+`RagfairOfferGenerator.GenerateDynamicOffers` spawns one `Task.Factory.StartNew` per assort item — thousands of them — and then blocks on `Task.WaitAll`. A partitioned `Parallel.ForEach` would allocate far fewer tasks and balance better. It is not here because delivering it means replacing a whole method body through a Harmony prefix, which is exactly the shape of change the other four avoid, and because the win could not be measured from here. A perf feature that can't prove it's behaviour-neutral doesn't ship — including when it's ours.
 
 ## What 4.1 took over — five features retired
 
@@ -43,7 +54,7 @@ SPT 4.1 removed that option outright:
 
 So the five surviving features are Harmony patches. They are kept as small as the job allows, and two of them are deliberately *smaller* than what they replaced:
 
-- **S8** used to reimplement `RagfairServer.Update()` minus the forced collect. It now transpiles the single `GC.Collect` call site into a call with the identical argument list that decides whether to forward. Nothing else in the method is touched, so it is behaviour-neutral by construction rather than by careful re-implementation — and the config flag still works at runtime instead of needing a restart.
+- **S8** used to reimplement `RagfairServer.Update()` minus the forced collect. It now transpiles the single `GC.Collect` call site into a call with the identical argument list that decides whether to forward. Nothing else in the method is touched, so it is behaviour-neutral by construction rather than by careful re-implementation — and the config flag still works at runtime instead of needing a restart. **S15** is the same technique on the raid-start collect.
 - **S9** used to replace the whole response-send method. It now rewrites only the `CompressionLevel` constant pushed into each `ZLibStream` constructor.
 - **S11** is a skipping prefix on `SaveProfileAsync` plus a read-only prefix on the router that does nothing but observe the request path. If the router method can't be found the save skip is **not** installed either — a skip without the marking half would look clean forever and drop real saves.
 - **S12** is a postfix returning a clone.
@@ -80,7 +91,7 @@ The unit-test suite covers the dirty-tracking save-skip rules, the telemetry hub
 
 ### Verifying the patches against a real 4.1 server assembly
 
-A Harmony patch whose target moved doesn't fail to compile — it fails at load, or worse, silently does nothing. Every patch in 2.0 was checked by loading `SPTarkov.Server.Core` 4.1.5 and this mod into one process, installing all five through their own `Apply` methods, and asserting that Harmony bound them:
+A Harmony patch whose target moved doesn't fail to compile — it fails at load, or worse, silently does nothing. Every patch in 2.0 was checked by loading `SPTarkov.Server.Core` 4.1.5 and this mod into one process, installing all six through their own `Apply` methods, and asserting that Harmony bound them:
 
 ```
 ok    S8  RagfairServer.ProcessExpiredFleaOffers resolved
@@ -90,9 +101,11 @@ ok    S11 SaveServer.SaveProfileAsync resolved
 ok    S11 HttpRouter.GetResponseObjectAsync resolved
 ok    S12 BotHelper.GetBotRandomizationDetails resolved
 ok    S13 NotifierController.NotifyAsync resolved
+ok    S15 AsyncMoveNext(StartLocalRaidAsync) resolved
 ok    S8  transpiler rewrote the GC.Collect call (count=1)
 ok    S9  transpiler rewrote both ZLibStream levels (count=2)
-ok    ... all seven targets carry our patch
+ok    S15 transpiler rewrote the raid-start GC.Collect (count=1)
+ok    ... all eight targets carry our patch
 ALL PATCHES BIND
 ```
 

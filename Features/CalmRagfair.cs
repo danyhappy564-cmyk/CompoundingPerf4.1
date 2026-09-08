@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Reflection.Emit;
 using CompoundingPerf.Telemetry;
 using HarmonyLib;
 using SPTarkov.Common.Models.Logging;
@@ -56,24 +55,8 @@ internal static class CalmRagfair
 
     private static int _rewrites;
 
-    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-    {
-        var vanillaCollect = AccessTools.Method(typeof(GC), nameof(GC.Collect),
-            [typeof(int), typeof(GCCollectionMode), typeof(bool), typeof(bool)]);
-        var replacement = AccessTools.Method(typeof(CalmRagfair), nameof(MaybeCollect));
-
-        foreach (var instruction in instructions)
-        {
-            if (instruction.opcode == OpCodes.Call && ReferenceEquals(instruction.operand, vanillaCollect))
-            {
-                _rewrites++;
-                yield return new CodeInstruction(OpCodes.Call, replacement) { labels = instruction.labels, blocks = instruction.blocks };
-                continue;
-            }
-
-            yield return instruction;
-        }
-    }
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) =>
+        GcCallSite.Redirect(instructions, AccessTools.Method(typeof(CalmRagfair), nameof(MaybeCollect)), () => _rewrites++);
 
     /// <summary>Same signature as the <c>GC.Collect</c> overload it replaces, so the
     /// arguments vanilla already pushed onto the stack stay valid.</summary>

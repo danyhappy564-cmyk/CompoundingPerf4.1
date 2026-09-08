@@ -15,10 +15,15 @@
       "Enabled": true,
       "Level": "Fastest"
     },
-    "_SaveDirtyTracking_note": "Skips the periodic profile save entirely when the session is clean — vanilla serializes + MD5-hashes the full profile every tick even when idle. Player actions always mark the session dirty (any non-pure request). ForceSaveIntervalSeconds is the worst-case persistence window for passive server-side changes like hideout production — it MUST exceed SPT's save tick (60s) or the skip never triggers; default 300 skips ~4 of every 5 idle saves.",
+    "_SaveDirtyTracking_note": "OFF BY DEFAULT since 2.0 — opt in deliberately. Skips the periodic profile save entirely when the session is clean; vanilla serializes + MD5-hashes the full profile every tick even when idle. It is the only feature here that suppresses a vanilla call rather than changing a value, so its failure mode is 'a profile change was not written' rather than 'an optimization did nothing', and its payoff is the smallest of the set (it only helps a session idling in the menu — anything happening in a raid marks the session dirty anyway). ForceSaveIntervalSeconds is the worst-case persistence window for passive server-side changes like hideout production; it MUST exceed SPT's save tick (60s) or the skip never triggers.",
     "SaveDirtyTracking": {
-      "Enabled": true,
+      "Enabled": false,
       "ForceSaveIntervalSeconds": 300
+    },
+    "_RaidStartGc_note": "NEW in 2.0. StartLocalRaidAsync ends with GC.Collect(MaxGeneration, Aggressive, blocking, compacting) — the most expensive collection .NET offers — and it runs inside the request path, so you sit on the loading screen while the server compacts its entire heap, every raid. Background (default) still asks for a gen-2 collection but a non-blocking, non-compacting one the runtime finishes while the raid loads. Modes: Background | Skip | Vanilla.",
+    "RaidStartGc": {
+      "Enabled": true,
+      "Mode": "Background"
     },
     "_IsolatedBotRandomisation_note": "Fixes a vanilla bug: night-raid equipment modifiers are written into SHARED bot config — they compound per generated bot, persist across raids until restart, and race across parallel bot generation. Still present in 4.1.5. With this on, every bot gets a private copy and the modifier applies exactly once.",
     "IsolatedBotRandomisation": {

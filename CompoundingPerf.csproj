@@ -57,7 +57,7 @@
        holding a file lock — tests + builds still succeed, just no live deploy). -->
   <Target Name="DeployToSpt" AfterTargets="PostBuildEvent" Condition="'$(SkipDeploy)' != 'true'">
     <PropertyGroup>
-      <ServerDeployDir>$(SptRoot)\SPT\user\mods\CompoundingPerf\</ServerDeployDir>
+      <ServerDeployDir>$(SptRoot)\SPT_Runtime\user\mods\CompoundingPerf\</ServerDeployDir>
     </PropertyGroup>
     <MakeDir Directories="$(ServerDeployDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ServerDeployDir)" SkipUnchangedFiles="false"

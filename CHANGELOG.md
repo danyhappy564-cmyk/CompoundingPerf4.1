@@ -1,5 +1,58 @@
 # Changelog
 
+## 2.0.0 — SPT 4.1
+
+Ported to SPT 4.1.5. Six of the eleven features are gone, five of them because 4.1 does
+the job itself, and the five survivors had to be rebuilt on a different mechanism.
+
+**The mechanism changed.** Every feature through 4.0 was a DI subclass registered with
+`Injectable.TypeOverride`. On 4.1 that is not possible at all: the `TypeOverride` property
+was removed from the attribute, `SaveServer` / `RagfairServer` / `RandomUtil` /
+`SptWebSocketConnectionHandler` are sealed, none of the eleven overridden methods is
+virtual any more, and three of them no longer exist under any name. The survivors are
+Harmony patches now, which costs the mod its old "other mods' patches keep working because
+our subclass *is* the target" property. Two of them are narrower than what they replace:
+S8 rewrites one `GC.Collect` call site rather than reimplementing `Update()`, and S9
+rewrites one `CompressionLevel` constant rather than replacing the send method.
+
+**Retired — SPT 4.1 does these now** (checked against the 4.1.5 assembly, not assumed)
+- **S1 ProfileSaveDebouncer** — `SaveProfileAsync` takes a per-profile `SemaphoreSlim`.
+- **S2 ResponseCache** — the heavy endpoints return `StreamedJsonBody` and serialize
+  straight to the response stream, so there is no cacheable string any more.
+- **S6 ThreadSafeRandom** — `RandomUtil` uses `RandomNumberGenerator`; the shared
+  `System.Random` is gone.
+- **S7 ResponseSanitizer** — `ClearString` is already a single `SearchValues` scan.
+- **S10 ThreadSafeCaches** — `ItemBaseClassService` has a `Lock`, `HandbookHelper`'s lazy
+  init is benign, and nothing in SPT calls `ItemFilterService`'s blacklist mutators, so
+  the remaining race needs a mod writing the blacklist mid-raid. Guarding it means
+  patching `IsItemBlacklisted`, which loot generation hammers — not worth it.
+- **S13, websocket half** — 4.1 serializes once per message and gates each socket with
+  its own `SemaphoreSlim`. The `/notify` long-poll half survives.
+
+**Kept**
+- **S8 RagfairCalmUpdates** — `ProcessExpiredFleaOffers` still forces a blocking,
+  compacting full GC.
+- **S9 FastCompression** — both response paths still compress at `SmallestSize`.
+- **S11 SaveDirtyTracking** — the full serialize + MD5 on every tick is unchanged.
+- **S12 IsolatedBotRandomisation** — `BotInventoryGenerator` still writes night modifiers
+  into the shared config object.
+- **S13 CalmNotifier** — `NotifyAsync` still pins a thread with `Thread.Sleep`.
+
+**Build**
+- `net9.0` → `net10.0`; `SPTarkov.*` packages → `SPTushonka.*` 4.1.5 (namespaces unchanged).
+- Client project `net471` → `netstandard2.1`.
+- `Lib.Harmony` 2.3.3 → 2.4.2: the 4.1 server runs on .NET 10, where `LocalBuilder` became
+  abstract and 2.3.3 throws `MemberAccessException` while building a patch.
+- `IOnLoad.OnLoad()` → `OnLoadAsync(CancellationToken)`; `AbstractModMetadata` →
+  `IModMetadata`; `OnLoadOrder.PostDBModLoader` no longer exists.
+- Default `SptRoot` is now `E:\SPT 4.1`.
+
+**Verification**
+- All five patches were installed against the real 4.1.5 `SPTarkov.Server.Core` in a test
+  process and asserted to bind, with the two transpilers asserted to have rewritten the
+  expected number of call sites (1 and 2).
+- Not run on a live server and not measured in game.
+
 ## 1.3.0 — 2026-06-20
 
 The big one. Four new optimizations, two removals, the FIKA crash fix, and a pass to

@@ -16,7 +16,7 @@ public class Plugin : BaseUnityPlugin
 {
     public const string ModGuid    = "com.echostarz.compoundingperf.client";
     public const string ModName    = "CompoundingPerf.Client";
-    public const string ModVersion = "1.3.0";
+    public const string ModVersion = "2.0.0";
 
     public static CompoundingPerfConfig LoadedConfig { get; private set; } = new();
     public static DetectedMods Mods { get; private set; } = new();

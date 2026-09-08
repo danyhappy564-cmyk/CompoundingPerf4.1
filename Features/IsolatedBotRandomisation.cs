@@ -1,89 +1,87 @@
-using SPTarkov.DI.Annotations;
-using SPTarkov.Server.Core.Helpers;
-using SPTarkov.Server.Core.Models.Eft.Common.Tables;
-using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
-using SPTarkov.Server.Core.Utils;
-using SPTarkov.Server.Core.Utils.Cloners;
 using CompoundingPerf.Telemetry;
+using HarmonyLib;
+using SPTarkov.Common.Models.Logging;
+using SPTarkov.Server.Core.Helpers.Bot;
+using SPTarkov.Server.Core.Models.Spt.Config;
+using SPTarkov.Server.Core.Utils.Cloners;
 
 namespace CompoundingPerf.Features;
 
 /// <summary>
-/// S12 — Subclass of <see cref="BotHelper"/> registered via SPT.DI's
-/// <see cref="Injectable.TypeOverride"/>. Returns a defensive clone from
-/// <c>GetBotRandomizationDetails</c> instead of vanilla's live reference into the
-/// shared <c>BotConfig</c>.
+/// S12 — fixes a vanilla bug rather than an inefficiency. <c>GetBotRandomizationDetails</c>
+/// hands back the live <c>RandomisationDetails</c> record out of the shared
+/// <c>BotConfig</c>, and <c>BotInventoryGenerator.GenerateAndAddEquipmentToBot</c> applies
+/// night-raid equipment modifiers by writing straight back into it. Three consequences:
 ///
-/// <para><b>The vanilla bug (source + IL verified)</b>: on night raids,
-/// <c>BotInventoryGenerator.GenerateAndAddEquipmentToBot</c> applies nighttime
-/// equipment-chance modifiers by writing them back into the object
-/// <c>GetBotRandomizationDetails</c> returned — which is the live config record shared
-/// by every bot, every raid, for the server's lifetime. Three consequences:</para>
 /// <list type="number">
-///   <item><b>Compounding</b> — the modifier is ADDED once per generated bot
-///     (<c>newWeight = weight + currentValue</c>), so chances drift toward the 0/100
-///     clamp bounds as the raid generates more bots.</item>
-///   <item><b>Persistence</b> — the mutation is never reverted; one night raid leaves
-///     the modifiers baked into config for every later raid, day or night, until
-///     server restart.</item>
-///   <item><b>Data race</b> — vanilla 4.0.13 generates bots in parallel
-///     (<c>AsParallel</c> in <c>BotController.GenerateBotWave</c>), so those writes are
-///     concurrent read-modify-writes on a plain <c>Dictionary</c>.</item>
+///   <item><b>Compounding</b> — the modifier is added once per generated bot
+///     (<c>newWeight = modifier + currentValue</c>), so chances drift toward the 0/100
+///     clamp bounds as a raid generates more bots.</item>
+///   <item><b>Persistence</b> — the mutation is never reverted, so one night raid leaves
+///     the modifiers baked into config for every later raid, day or night, until the
+///     server restarts.</item>
+///   <item><b>Data race</b> — bots are generated in parallel, so those are concurrent
+///     read-modify-writes on a plain <c>Dictionary</c>.</item>
 /// </list>
 ///
-/// <para><b>The fix</b>: every caller gets its own clone. The nighttime adjustment then
-/// applies exactly once per bot to that bot's private copy — the evident intent of the
-/// code — nothing persists across raids, and there is no shared object to race on.</para>
+/// <para>Verified still present in 4.1.5 — <c>BotInventoryGenerator</c> still does
+/// <c>botRandomizationDetails.EquipmentMods[key] = Math.Clamp(...)</c> on the returned
+/// object.</para>
 ///
-/// <para><b>Behavior note</b>: one downstream reader
-/// (<c>BotEquipmentModGenerator</c>) previously observed the leaked night-modified
-/// (and progressively compounded) values; with isolation it reads pristine config.
-/// That is a deliberate change — the values it read in vanilla were corrupted by
-/// design accident, not intent.</para>
+/// <para>The fix hands every caller its own clone, so the nighttime adjustment applies
+/// exactly once per bot to that bot's private copy — the evident intent of the code —
+/// nothing persists across raids, and there is no shared object to race on.</para>
+///
+/// <para><b>Behaviour note</b>: one downstream reader (<c>BotEquipmentModGenerator</c>)
+/// used to observe the leaked, progressively compounded values; with isolation it reads
+/// pristine config. That is deliberate — what it read before was corrupted by accident,
+/// not by design.</para>
+///
+/// <para><b>4.0 → 4.1</b>: was a DI <c>TypeOverride</c> subclass of <c>BotHelper</c>.
+/// 4.1 left <c>BotHelper</c> unsealed but made the method non-virtual, so an override is
+/// no longer dispatched to. Same one-line behaviour, delivered as a postfix.</para>
 /// </summary>
-[Injectable(TypeOverride = typeof(BotHelper), TypePriority = 100)]
-public class IsolatedBotRandomisationHelper(
-    ISptLogger<BotHelper> logger,
-    DatabaseService       databaseService,
-    RandomUtil            randomUtil,
-    ConfigServer          configServer,
-    ICloner               cloner)
-    : BotHelper(logger, databaseService, randomUtil, configServer)
+internal static class IsolatedBotRandomisation
 {
-    /// <summary>Kill-switch. While false, vanilla behavior (shared reference) applies.</summary>
+    /// <summary>Kill-switch. While false the shared reference is returned, as in vanilla.</summary>
     public static volatile bool IsEnabled;
 
-    private readonly ICloner _cloner = cloner;
+    private static ICloner? _cloner;
 
-    public override RandomisationDetails? GetBotRandomizationDetails(int botLevel, EquipmentFilters botEquipConfig)
+    public static void Apply(Harmony harmony, ICloner cloner, ISptLogger<CompoundingPerfMod> logger)
     {
-        var details = base.GetBotRandomizationDetails(botLevel, botEquipConfig);
+        _cloner = cloner;
 
-        if (!IsEnabled || details is null)
+        var target = AccessTools.Method(typeof(BotHelper), nameof(BotHelper.GetBotRandomizationDetails));
+        if (target is null)
         {
-            return details;
+            logger.Warning("[CompoundingPerf/S12] BotHelper.GetBotRandomizationDetails not found — SPT internals moved. Feature inactive.");
+            return;
+        }
+
+        harmony.Patch(target, postfix: new HarmonyMethod(AccessTools.Method(typeof(IsolatedBotRandomisation), nameof(ClonePostfix))));
+    }
+
+    private static void ClonePostfix(ref RandomisationDetails? __result)
+    {
+        if (!IsEnabled || __result is null || _cloner is null)
+        {
+            return;
         }
 
         TelemetryHub.Increment("s12.randomisation.clones");
-        return _cloner.Clone(details);
+        __result = _cloner.Clone(__result);
     }
-}
 
-public static class IsolatedBotRandomisation
-{
-    public static void Apply(IsolatedBotRandomisationOptions options, ISptLogger<CompoundingPerfMod> logger)
+    public static void Configure(IsolatedBotRandomisationOptions options, ISptLogger<CompoundingPerfMod> logger)
     {
+        IsEnabled = options.Enabled;
         if (options.Enabled)
         {
-            IsolatedBotRandomisationHelper.IsEnabled = true;
             logger.Success("[CompoundingPerf/S12] isolated bot randomisation ACTIVE — nighttime modifiers no longer compound, persist, or race on shared config");
         }
         else
         {
-            IsolatedBotRandomisationHelper.IsEnabled = false;
             logger.Info("[CompoundingPerf/S12] isolated bot randomisation disabled in config");
         }
     }

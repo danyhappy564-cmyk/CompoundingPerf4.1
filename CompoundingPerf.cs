@@ -94,12 +94,14 @@ public class CompoundingPerfMod(
             SaveDirtyTracking.Apply(harmony, logger);                                      // S11
             IsolatedBotRandomisation.Apply(harmony, cloner, logger);                       // S12
             CalmNotifier.Apply(harmony, notifierHelper, notificationService, logger);      // S13
+            CalmRaidStart.Apply(harmony, logger);                                          // S15
 
             CalmRagfair.Configure(config.Server.RagfairCalmUpdates, logger);
             FastCompression.Configure(config.Server.FastCompression, logger);
             SaveDirtyTracking.Configure(config.Server.SaveDirtyTracking, logger);
             IsolatedBotRandomisation.Configure(config.Server.IsolatedBotRandomisation, logger);
             CalmNotifier.Configure(config.Server.CalmNotifier, logger);
+            CalmRaidStart.Configure(config.Server.RaidStartGc, logger);
 
             logger.Success("[CompoundingPerf] server-side features loaded");
         }

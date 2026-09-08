@@ -13,9 +13,11 @@ public class ConfigTests
         Assert.True(c.Server.RagfairCalmUpdates.Enabled);
         Assert.True(c.Server.FastCompression.Enabled);
         Assert.Equal("Fastest", c.Server.FastCompression.Level);
-        Assert.True(c.Server.SaveDirtyTracking.Enabled);
+        Assert.False(c.Server.SaveDirtyTracking.Enabled); // opt-in since 2.0 — worst risk, least reward
         Assert.True(c.Server.IsolatedBotRandomisation.Enabled);
         Assert.True(c.Server.CalmNotifier.Enabled);
+        Assert.True(c.Server.RaidStartGc.Enabled);
+        Assert.Equal("Background", c.Server.RaidStartGc.Mode);
 
         // Must stay above SPT's 60s save tick or the dirty-skip never actually fires.
         Assert.True(c.Server.SaveDirtyTracking.ForceSaveIntervalSeconds > 60);
@@ -94,7 +96,8 @@ public class ConfigTests
         var parsed = JsonSerializer.Deserialize<CompoundingPerfConfig>(raw);
         Assert.NotNull(parsed);
         Assert.True(parsed!.Server.RagfairCalmUpdates.Enabled);
-        Assert.True(parsed.Server.SaveDirtyTracking.Enabled);
+        Assert.False(parsed.Server.SaveDirtyTracking.Enabled);
+        Assert.True(parsed.Server.RaidStartGc.Enabled);
         Assert.True(parsed.Server.CalmNotifier.Enabled);
         Assert.True(parsed.Client.FrameStats.Enabled);
     }

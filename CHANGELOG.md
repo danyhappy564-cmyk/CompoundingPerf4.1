@@ -29,6 +29,28 @@ rewrites one `CompressionLevel` constant rather than replacing the send method.
 - **S13, websocket half** — 4.1 serializes once per message and gates each socket with
   its own `SemaphoreSlim`. The `/notify` long-poll half survives.
 
+**New**
+- **S15 RaidStartGc** — `LocationLifecycleService.StartLocalRaidAsync` ends with
+  `GC.Collect(MaxGeneration, Aggressive, blocking: true, compacting: true)`, the most
+  expensive collection .NET offers, *inside the request path*: the player waits on the
+  loading screen while the server compacts its entire heap, every raid. Not a 4.1
+  regression — the same call is in 4.0.13; the original mod covered the ragfair collect
+  and missed this one. Default `Background` keeps the gen-2 collection but makes it
+  non-blocking and non-compacting; `Skip` drops it; `Vanilla` forwards it untouched.
+
+**Changed**
+- **S11 SaveDirtyTracking now ships OFF.** It is the only feature that suppresses a vanilla
+  call rather than changing a value, so its failure mode is "a profile change was not
+  written" instead of "an optimization did nothing" — and its payoff is the smallest of the
+  set, since it only helps a session idling in the menu. Opt in if you want it.
+
+**Considered and not shipped**
+- `RagfairOfferGenerator.GenerateDynamicOffers` spawns one `Task.Factory.StartNew` per
+  assort item (thousands) and blocks on `Task.WaitAll`. A partitioned `Parallel.ForEach`
+  would be cheaper, but delivering it means replacing a whole method body through a Harmony
+  prefix — the shape of change the other features avoid — and the win could not be measured
+  from here.
+
 **Kept**
 - **S8 RagfairCalmUpdates** — `ProcessExpiredFleaOffers` still forces a blocking,
   compacting full GC.

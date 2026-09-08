@@ -23,6 +23,7 @@ public record ServerToggles
     public SaveDirtyTrackingOptions         SaveDirtyTracking        { get; set; } = new();
     public IsolatedBotRandomisationOptions  IsolatedBotRandomisation { get; set; } = new();
     public CalmNotifierOptions              CalmNotifier             { get; set; } = new();
+    public RaidStartGcOptions               RaidStartGc              { get; set; } = new();
 
     // Retired in 2.0 because SPT 4.1 does the job itself, verified against the 4.1.5
     // server assembly rather than assumed:
@@ -71,7 +72,14 @@ public record SaveDirtyTrackingOptions
     // nothing changed; with this on, an idle session costs nothing. Any request that
     // isn't in a small known-pure whitelist marks the session dirty, so player-driven
     // changes can never be skipped.
-    public bool Enabled { get; set; } = true;
+    //
+    // OFF BY DEFAULT since 2.0. It is the only feature in the mod that suppresses a
+    // vanilla call rather than changing a value, so it is the only one whose failure mode
+    // is "a profile change was not written" instead of "an optimization did nothing".
+    // The payoff is also the smallest of the five: it only helps a session sitting idle in
+    // the menu, because anything happening in a raid marks the session dirty anyway.
+    // Worst risk, least reward - opt in deliberately if you want it.
+    public bool Enabled { get; set; } = false;
 
     /// <summary>A clean session still gets a real save this often, to persist
     /// server-internal changes that bypass HTTP (hideout production progress).
@@ -87,6 +95,22 @@ public record RagfairCalmUpdatesOptions
     // is the only thing removed; the runtime's server GC reclaims the memory on its
     // own schedule.
     public bool Enabled { get; set; } = true;
+}
+
+public record RaidStartGcOptions
+{
+    // S15: StartLocalRaidAsync ends with
+    //   GC.Collect(MaxGeneration, Aggressive, blocking: true, compacting: true)
+    // - the most expensive collection .NET offers - and it runs inside the request path,
+    // so the player waits on the loading screen while the server compacts its whole heap.
+    // Present in 4.0 too; the original mod covered the ragfair collect and missed this one.
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>One of: Background, Skip, Vanilla. Unrecognized values fall back to
+    /// Background — still a gen-2 collection, but non-blocking and non-compacting, so the
+    /// raid-start response is not held up by it. Skip drops the collect entirely; Vanilla
+    /// forwards it untouched (same as Enabled: false).</summary>
+    public string Mode { get; set; } = "Background";
 }
 
 public record FastCompressionOptions
